@@ -21,6 +21,7 @@
 </section></div>
 <div id="dashboardView" class="controls" hidden>
 <section><h2>Dashboard</h2><p id="dashboardState"></p><div id="dashboardStats" class="stats"></div></section>
+<section id="dashboardIndicators" hidden><h2 id="indicatorPeriod"></h2><div id="indicatorCards" class="stats"></div></section>
 <section><h2>Registros por área</h2><div id="dashboardMetrics" class="stats"></div></section>
 </div>
 <div id="filesView" class="controls" hidden>
@@ -55,6 +56,12 @@
 <div id="customControls" hidden>
 <nav id="modules" aria-label="Áreas del informe"></nav>
 <div id="filters"></div>
+<details><summary>Elegir series para los gráficos</summary>
+<label><span><input id="chooseSeries" type="checkbox"> Mostrar solo las series marcadas</span></label>
+<p>La selección modifica los gráficos del informe. La tabla y el CSV conservan los filtros del informe.</p>
+<label>Buscar series <input id="seriesSearch" type="search"></label>
+<div id="seriesChoices" style="max-height:18rem;overflow:auto"></div>
+</details>
 <fieldset><legend>Comparar dos periodos</legend>
 <label>Periodo de referencia <select id="baseline"></select></label>
 <label>Periodo comparado <select id="comparison"></select></label>
@@ -174,7 +181,7 @@ function resetPending() {
  $('replace').checked=false; $('replaceLabel').hidden=true; $('apply').disabled=true; $('import').value='';
 }
 function replaceRows(next, demo, changed) {
- rows=next; fictional=demo; dirty=changed; resetPending(); render(true);
+ rows=next; fictional=demo; dirty=changed; chosenSeries.clear(); $('chooseSeries').checked=false; $('seriesSearch').value=''; resetPending(); render(true);
 }
 function datesAndFilters(reset) {
  return filters.map(([label,col],i)=>{
@@ -237,6 +244,38 @@ function renderComparison(page, records) {
  }
  const scroll=element('div'); scroll.className='scroll'; scroll.append(view); section.append(scroll); page.append(section);
 }
+function reportGroups(result) {
+ const groups=new Map();
+ for(const row of result) {
+  const [period,metric,scope,group,item,units]=row;
+  const key=JSON.stringify([metric,scope,group,item,units,period.length]);
+  if(!groups.has(key)) groups.set(key,[]);
+  groups.get(key).push(row);
+ }
+ return groups;
+}
+const chosenSeries = new Set();
+function renderSeriesChoices(groups) {
+ const query=$('seriesSearch').value.trim().toLocaleLowerCase('es');
+ const controls=[];
+ for(const [key,series] of groups) {
+  if(series.length<2)continue;
+  const [period,metric,scope,group,item,units]=series[0];
+  const caption=[labelFor(item),metrics[metric],scope,group,units,period.length===4?'Anual':'Trimestral'].join(' · ');
+  if(!caption.toLocaleLowerCase('es').includes(query))continue;
+  const box=element('input'); box.type='checkbox'; box.checked=chosenSeries.has(key);
+  box.onchange=()=>{
+   if(box.checked) chosenSeries.add(key); else chosenSeries.delete(key);
+   render(false);
+   const next=[...$('seriesChoices').querySelectorAll('input')].find(input=>input.dataset.series===key);
+   next?.focus();
+  };
+  box.dataset.series=key;
+  const label=element('label'); label.style.display='block'; label.append(box,document.createTextNode(' '+caption));
+  controls.push(label);
+ }
+ $('seriesChoices').replaceChildren(...(controls.length?controls:[element('p','No hay series con dos o más periodos para esta búsqueda.')]));
+}
 function render(refresh) {
  if(refresh) $('filters').replaceChildren(...datesAndFilters(true));
  renderDashboard();
@@ -248,15 +287,13 @@ function render(refresh) {
   element('p',activeFilters.join(' · ')),
   element('p',result.length+' registros · '+new Set(result.map(row=>row[0])).size+' periodos'+(fictional?' · Contiene datos ficticios':'')));
  page.append(summary);
- const groups=new Map();
- for(const row of result) {
-  const [period,metric,scope,group,item,units]=row;
-  const key=JSON.stringify([metric,scope,group,item,units,period.length]);
-  if(!groups.has(key)) groups.set(key,[]);
-  groups.get(key).push(row);
- }
- const limit=reportMode==='general'?'8':$('chartLimit').value;
- const available=[...groups.values()].filter(group=>group.length>1);
+ const groups=reportGroups(result);
+ const custom=reportMode==='custom';
+ if(custom)renderSeriesChoices(groups);
+ const manual=custom&&$('chooseSeries').checked;
+ const limit=manual?'all':custom?$('chartLimit').value:'8';
+ const available=[...groups.entries()].filter(([key,series])=>series.length>1&&(!manual||chosenSeries.has(key))).map(([,series])=>series);
+ if(manual&&!available.length)summary.append(element('p','Marca las series que quieres incluir en los gráficos.'));
  if(limit!=='all' && Number(limit)>0 && available.length>Number(limit)) summary.append(element('p','Se muestran '+limit+' de '+available.length+' series. Puedes ampliar la selección en Gráficos.'));
  for(const series of available.slice(0,limit==='all'?available.length:Number(limit))) {
   const block=element('section'), ordered=[...series].sort((a,b)=>a[0].localeCompare(b[0]));
@@ -466,6 +503,23 @@ function setReportMode(mode) {
  $('custom').setAttribute('aria-pressed',String(mode==='custom'));
  render(false);
 }
+const dashboardCodes = [
+ ['PROAH072','Consumo total J01 y J02','Hospital de Valme'],
+ ['PROAH071','Gasto total','Total hospital'],
+ ['PROAH069','Gasto en ingresados','Ingresados'],
+ ['PROAH070','Gasto en ambulantes','Ambulantes'],
+ ['IRASH071','E. coli BLEE','Hospital de Valme'],
+ ['IRASH072','K. pneumoniae BLEE','Hospital de Valme'],
+ ['IRASH073','Enterobacterias productoras de carbapenemasas','Hospital de Valme'],
+ ['IRASH074','P. aeruginosa multirresistente','Hospital de Valme'],
+ ['IRASH076','C. difficile','Hospital de Valme']
+];
+function dashboardValues(records, period) {
+ return dashboardCodes.map(([code,label,scope])=>{
+  const matches=records.filter(row=>row[0]===period && row[1]===catalog[code][0] && row[2]===scope && row[4]===code);
+  return {label,match:matches.length===1?matches[0]:undefined,ambiguous:matches.length>1};
+ });
+}
 function renderDashboard() {
  const periods=[...new Set(rows.map(row=>row[0]))].sort();
  $('dashboardState').textContent=rows.length
@@ -475,6 +529,18 @@ function renderDashboard() {
  $('dashboardStats').replaceChildren(...cards.map(([label,value])=>{
   const card=element('div',label); card.className='stat'; card.append(element('strong',value)); return card;
  }));
+ const quarters=rows.filter(row=>row[0].length===7&&dashboardCodes.some(([code,,scope])=>row[4]===code&&row[2]===scope));
+ const quarter=quarters.map(row=>row[0]).sort().at(-1);
+ $('dashboardIndicators').hidden=!quarter;
+ if(quarter){
+  $('indicatorPeriod').textContent='Indicadores de Valme · '+quarter;
+  $('indicatorCards').replaceChildren(...dashboardValues(rows,quarter).map(({label,match,ambiguous})=>{
+   const card=element('div',label); card.className='stat';
+   card.append(element('strong',match?format.format(match[6]):ambiguous?'Revisar datos':'Sin dato'));
+   if(match)card.append(element('small',match[5]==='EUR'?'€':match[5]));
+   return card;
+  }));
+ }
  const counts=new Map();
  for(const row of rows) counts.set(row[1],(counts.get(row[1])??0)+1);
  $('dashboardMetrics').replaceChildren(...Object.entries(metrics).map(([metric,label])=>{
@@ -514,6 +580,8 @@ $('catalogExport').onclick=()=>{
  download('catalogo-pirasoa-2025.csv','\ufeffcodigo;indicador;descripcion\r\n'+lines.join('\r\n'),'text/csv;charset=utf-8');
 };
 $('chartLimit').onchange=()=>render(false);
+$('chooseSeries').onchange=()=>render(false);
+$('seriesSearch').oninput=()=>renderSeriesChoices(reportGroups(selection()));
  $('baseline').onchange=$('comparison').onchange=()=>render(false);
 $('showDetail').onchange=()=>render(false);
 $('reportTitle').oninput=()=>render(false);
