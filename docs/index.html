@@ -6,29 +6,37 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>PROA Valme · PIRASOA</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#eff5f6;color:#16343c;font:16px system-ui}header{background:#103d47;color:white;padding:2rem max(5vw,1rem)}h1{margin:0}main{max-width:1120px;margin:auto;padding:1rem}section{background:white;border:1px solid #cadae0;border-radius:12px;padding:1.25rem;margin-bottom:1rem}h2{margin-top:0}button,input,select{font:inherit;padding:.5rem}button{background:#075e55;border:0;border-radius:5px;color:white;cursor:pointer}button:disabled{opacity:.5}[hidden]{display:none!important}label{display:inline-grid;gap:.3rem;margin:.35rem .45rem .35rem 0}.catalog{background:#fff;border:1px solid #cadae0;border-radius:12px;padding:1rem}.catalog summary{cursor:pointer;font-weight:650}nav{display:flex;flex-wrap:wrap;gap:.55rem;margin:.6rem 0}nav button[aria-pressed="true"]{background:#103d47;box-shadow:0 0 0 2px #103d47}.scroll{overflow:auto}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.5rem;border-bottom:1px solid #d8e3e6}.bar{display:grid;grid-template-columns:85px 1fr 95px;gap:.65rem;align-items:center;margin:.3rem 0}meter{width:100%}footer{padding:1rem 5vw}[role=status]{min-height:1.4em}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #a75b00;outline-offset:3px}@media print{header,footer,.controls{display:none!important}body{background:white}main,section{padding:0;border:0}tr,.bar{break-inside:avoid}thead{display:table-header-group}}
+*{box-sizing:border-box}body{margin:0;background:#eff5f6;color:#16343c;font:16px system-ui}header{background:#103d47;color:white;padding:2rem max(5vw,1rem)}h1{margin:0}main{max-width:1120px;margin:auto;padding:1rem}section{background:white;border:1px solid #cadae0;border-radius:12px;padding:1.25rem;margin-bottom:1rem}h2{margin-top:0}button,input,select{font:inherit;padding:.5rem}button{background:#075e55;border:0;border-radius:5px;color:white;cursor:pointer}button:disabled{opacity:.5}[hidden]{display:none!important}label{display:inline-grid;gap:.3rem;margin:.35rem .45rem .35rem 0}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:.65rem}.stat{padding:.85rem;background:#eff5f6;border-radius:8px}.stat strong{display:block;font-size:1.3rem}.stats button{text-align:left}textarea{font:inherit;padding:.5rem;resize:vertical}dialog{border:1px solid #cadae0;border-radius:12px;max-width:min(90vw,520px);color:inherit}dialog::backdrop{background:#103d4780}.catalog{background:#fff;border:1px solid #cadae0;border-radius:12px;padding:1rem}.catalog summary{cursor:pointer;font-weight:650}nav{display:flex;flex-wrap:wrap;gap:.55rem;margin:.6rem 0}nav button[aria-pressed="true"]{background:#103d47;box-shadow:0 0 0 2px #103d47}.scroll{overflow:auto}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.5rem;border-bottom:1px solid #d8e3e6}.bar{display:grid;grid-template-columns:85px 1fr 95px;gap:.65rem;align-items:center;margin:.3rem 0}meter{width:100%}footer{padding:1rem 5vw}[role=status]{min-height:1.4em}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #a75b00;outline-offset:3px}@media print{header,footer,.controls{display:none!important}body{background:white}main,section{padding:0;border:0}tr,.bar{break-inside:avoid}thead{display:table-header-group}}
 </style>
 </head>
 <body>
-<header><h1>PROA Valme</h1><p>Seguimiento PIRASOA y farmacoterapia antimicrobiana</p></header>
+<header><h1>PROA Valme</h1><p>Seguimiento PIRASOA y farmacoterapia antimicrobiana</p><nav id="navigation" class="controls" hidden aria-label="Navegación principal">
+<button type="button" data-view="dashboard">Dashboard</button><button type="button" data-view="files">Cargar archivos</button><button type="button" data-view="reports">Informes</button><button type="button" data-view="start">Inicio</button>
+</nav></header>
 <main>
-<section class="controls">
-<h2>Panel de seguimiento</h2>
-<nav id="modules" aria-label="Módulos del panel"></nav>
-<label>Nombre del informe <input id="reportTitle" maxlength="100" placeholder="Seguimiento PROA trimestral"></label>
-<label>Gráficos <select id="chartLimit"><option value="8">8 series</option><option value="24">24 series</option><option value="all">Todas</option><option value="0">Solo tablas</option></select></label>
-<label><span><input type="checkbox" id="showDetail" checked> Incluir tabla de detalle</span></label>
-</section>
-<section class="controls">
-<h2>Archivo de trabajo</h2>
-<p>Los ficheros se procesan en el navegador. Guarda el histórico cifrado antes de cerrar la página. Si pierdes el código, no podrás recuperar ese archivo.</p>
-<label>Código del archivo <input id="pass" type="password" autocomplete="off" minlength="14"></label>
-<label>Abrir histórico <input id="open" type="file" accept=".proavalme"></label>
-<button id="save">Guardar histórico cifrado</button>
-<button id="demo">Cargar datos ficticios</button>
-<button id="clear">Cerrar archivo de trabajo</button>
+<div id="startView" class="controls">
+<section><h2>Bienvenido a PROA Valme</h2><p>Consulta la actividad PROA y prepara informes PIRASOA con tus datos locales.</p>
+<button id="enter" type="button">Entrar al dashboard</button>
+<button id="demo" type="button">Probar con datos ficticios</button>
+</section></div>
+<div id="dashboardView" class="controls" hidden>
+<section><h2>Dashboard</h2><p id="dashboardState"></p><div id="dashboardStats" class="stats"></div></section>
+<section><h2>Registros por área</h2><div id="dashboardMetrics" class="stats"></div></section>
+</div>
+<div id="filesView" class="controls" hidden>
+<section><h2>Archivo de trabajo</h2>
+<p>Elige un código de al menos 14 caracteres al guardar el histórico. Usa ese mismo código para volver a abrirlo.</p>
+<label>Abrir histórico cifrado <input id="open" type="file" accept=".proavalme"></label>
+<button id="save" type="button">Guardar histórico cifrado</button>
+<button id="clear" type="button">Cerrar archivo de trabajo</button>
 <p id="status" role="status"></p>
 </section>
+<dialog id="codeDialog" aria-labelledby="codeTitle">
+<h2 id="codeTitle"></h2><div id="codeFields"></div>
+<p id="codeError" role="status"></p>
+<button id="codeConfirm" type="button">Continuar</button>
+<button id="codeCancel" type="button">Cancelar</button>
+</dialog>
 <section class="controls">
 <h2>Importar datos</h2>
 <p>Usa un XLSX en formato de plantilla o un CSV UTF-8. El XLS histórico de Valme tiene un formato específico que requiere conversión.</p>
@@ -39,12 +47,20 @@
 <label id="replaceLabel" hidden><span><input id="replace" type="checkbox"> Confirmo la sustitución completa de los bloques indicados</span></label>
 <button id="apply" disabled>Incorporar</button>
 </section>
+</div>
+<div id="reportsView" hidden>
 <section class="controls">
-<h2>Filtros e informes</h2>
+<h2>Informes</h2>
+<nav aria-label="Tipo de informe"><button id="general" type="button" aria-pressed="true">General</button><button id="custom" type="button" aria-pressed="false">Personalizado</button></nav>
+<div id="customControls" hidden>
+<nav id="modules" aria-label="Áreas del informe"></nav>
 <div id="filters"></div>
-<button id="general">Informe general</button>
-<button id="print">Imprimir / guardar PDF filtrado</button>
-<button id="export">Exportar CSV filtrado</button>
+<label>Título del informe <textarea id="reportTitle" rows="1" maxlength="100" autocomplete="off" placeholder="Seguimiento PROA trimestral"></textarea></label>
+<label>Gráficos <select id="chartLimit"><option value="8">8 series</option><option value="24">24 series</option><option value="all">Todas</option><option value="0">Solo tablas</option></select></label>
+<label><span><input type="checkbox" id="showDetail" checked> Incluir tabla de detalle</span></label>
+</div>
+<button id="print">Imprimir / guardar PDF</button>
+<button id="export">Exportar CSV</button>
 </section>
 <div id="report"></div>
 <details class="controls catalog"><summary>Catálogo PIRASOA 2025 · Hospitales y distritos</summary>
@@ -53,7 +69,7 @@
 <label>Ámbito del catálogo <select id="catalogScope"><option value="">Todos</option><option value="hospital">Hospitales</option><option value="district">Distritos</option></select></label>
 <button id="catalogExport">Descargar catálogo CSV</button>
 <div id="catalogRows"></div></details>
-</main><footer>Servicio de Farmacia Hospitalaria · Desarrollo Ramón Morillo</footer>
+</div></main><footer>Servicio de Farmacia Hospitalaria · Desarrollo Ramón Morillo</footer>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -80,6 +96,7 @@ const samples = [
  ['2025-T2','microbiologia','Hospital','Densidad','Indicador ficticio','Unidad de prueba',0]
 ];
 let rows = [], pending = [], overlaps = [], dirty = false, fictional = false, busy = false, reading = 0;
+let reportMode = "general";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8',{fatal:true});
 const format = new Intl.NumberFormat('es-ES',{maximumFractionDigits:4});
@@ -167,17 +184,19 @@ function datesAndFilters(reset) {
  });
 }
 function selection() {
+ if(reportMode==="general") return rows;
  const picked=filters.map((_,i)=>$('filter'+i).value);
  return rows.filter(row=>filters.every(([,col],i)=>!picked[i] ||
   (i===4?row[col]>=picked[i]:i===5?row[col]<=picked[i]:i===6?(row[0].length===4?'Anual':'Trimestral')===picked[i]:row[col]===picked[i])));
 }
 function render(refresh) {
  if(refresh) $('filters').replaceChildren(...datesAndFilters(true));
+ renderDashboard();
  const result=selection(), page=$('report'); page.replaceChildren();
  for(const button of $('modules').children) button.setAttribute('aria-pressed',String(button.dataset.metric===$('filter0').value));
  const summary=element('section');
- const activeFilters=filters.map(([label],i)=>{const control=$('filter'+i);return control.value?label+' '+control.selectedOptions[0].text:'';}).filter(Boolean);
- summary.append(element('h2',$('reportTitle').value.trim() || (activeFilters.length?'Informe personalizado PROA Valme':'Informe general PROA Valme')),
+ const activeFilters=reportMode==="general"?[]:filters.map(([label],i)=>{const control=$('filter'+i);return control.value?label+' '+control.selectedOptions[0].text:'';}).filter(Boolean);
+ summary.append(element('h2',(reportMode==='custom' ? $('reportTitle').value.trim() : '') || (reportMode==='custom'?'Informe personalizado PROA Valme':'Informe general PROA Valme')),
   element('p',activeFilters.join(' · ')),
   element('p',result.length+' registros · '+new Set(result.map(row=>row[0])).size+' periodos'+(fictional?' · Contiene datos ficticios':'')));
  page.append(summary);
@@ -188,7 +207,7 @@ function render(refresh) {
   if(!groups.has(key)) groups.set(key,[]);
   groups.get(key).push(row);
  }
- const limit=$('chartLimit').value;
+ const limit=reportMode==='general'?'8':$('chartLimit').value;
  const available=[...groups.values()].filter(group=>group.length>1);
  if(limit!=='all' && Number(limit)>0 && available.length>Number(limit)) summary.append(element('p','Se muestran '+limit+' de '+available.length+' series. Puedes ampliar la selección en Gráficos.'));
  for(const series of available.slice(0,limit==='all'?available.length:Number(limit))) {
@@ -206,7 +225,7 @@ function render(refresh) {
     (first?' ('+format.format((last-first)/first*100)+' %)':' · Variación porcentual sin referencia distinta de cero')));
   page.append(block);
  }
- if(!$('showDetail').checked)return;
+ if(reportMode==='custom'&&!$('showDetail').checked)return;
  const details=element('section'); details.append(element('h2','Detalle'),
   result.length?table([...result].sort((a,b)=>a[0].localeCompare(b[0]))):element('p','No hay registros para esta selección.'));
  page.append(details);
@@ -223,11 +242,29 @@ function inspect(records) {
  $('apply').disabled=Boolean(overlaps.length);
 }
 function reportError(error) {$('status').textContent=error.message;}
-function password() {
- if (!globalThis.crypto?.subtle) throw Error('El navegador necesita HTTPS o un archivo local para cifrar.');
- const value=$('pass').value;
- if(value.length<14) throw Error('Introduce un código de al menos 14 caracteres.');
- return value;
+function requestCode(mode) {
+ const creating=mode==='save';
+ const dialog=$('codeDialog');
+ $('codeTitle').textContent=creating?'Elige el código del histórico':'Introduce el código con el que se guardó';
+ $('codeError').textContent='';
+ const fields=$('codeFields');
+ const pass=element('input'); pass.type='password'; pass.autocomplete='new-password';
+ pass.spellcheck=false; pass.maxLength=512;
+ const label=element('label','Código del histórico '); label.append(pass); fields.replaceChildren(label);
+ const repeat=element('input'); repeat.type='password'; repeat.autocomplete='new-password';
+ repeat.spellcheck=false; repeat.maxLength=512;
+ if(creating){const confirm=element('label','Repite el código '); confirm.append(repeat); fields.append(confirm);}
+ return new Promise(resolve=>{
+  let value=null;
+  $('codeConfirm').onclick=()=>{
+   if(pass.value.length<14){$('codeError').textContent='Introduce un código de al menos 14 caracteres.';return;}
+   if(creating&&pass.value!==repeat.value){$('codeError').textContent='Los dos códigos deben coincidir.';return;}
+   value=pass.value; dialog.close();
+  };
+  $('codeCancel').onclick=()=>dialog.close();
+  dialog.addEventListener('close',()=>{fields.replaceChildren();resolve(value);},{once:true});
+  dialog.showModal(); pass.focus();
+ });
 }
 async function keyFor(pass,salt) {
  const base=await crypto.subtle.importKey('raw',encoder.encode(pass),'PBKDF2',false,['deriveKey']);
@@ -337,9 +374,11 @@ $('save').onclick=async()=>{
  busy=true;
  try{
   if(!rows.length)throw Error('Incorpora datos antes de guardar.');
-  const bytes=await seal({rows,fictional},password());
+  if(!globalThis.crypto?.subtle) throw Error('El cifrado requiere HTTPS o un archivo local compatible.');
+  const pass=await requestCode('save'); if(pass===null)return;
+  const bytes=await seal({rows,fictional},pass);
   download('historico-proavalme.proavalme',bytes,'application/octet-stream');
-  $('pass').value=''; dirty=false; $('status').textContent='Descarga iniciada. Comprueba que el archivo se ha guardado.';
+  dirty=false; renderDashboard(); $('status').textContent='Descarga iniciada. Comprueba que el archivo se ha guardado.';
  }catch(error){reportError(error);}finally{busy=false;}
 };
 $('open').onchange=async()=>{
@@ -348,22 +387,59 @@ $('open').onchange=async()=>{
  busy=true;
  try{
   if(file.size>16_000_000)throw Error('El archivo supera 16 MB.');
-  const data=await unseal(new Uint8Array(await file.arrayBuffer()),password());
-  replaceRows(data.rows,data.fictional,false); $('pass').value=''; $('status').textContent='Histórico recuperado.';
+  if(!globalThis.crypto?.subtle) throw Error('El cifrado requiere HTTPS o un archivo local compatible.');
+  const pass=await requestCode('open'); if(pass===null)return;
+  const data=await unseal(new Uint8Array(await file.arrayBuffer()),pass);
+  replaceRows(data.rows,data.fictional,false); $('status').textContent='Histórico recuperado.';
  }catch(error){reportError(error);}finally{busy=false;}
 };
 $('demo').onclick=()=>{
  if(!busy&&(!dirty||confirm('Hay cambios sin guardar. ¿Cargar datos ficticios?'))){
-  replaceRows(samples,true,false); $('status').textContent='Ejemplo ficticio cargado.';
+  replaceRows(samples,true,false); showView('dashboard'); $('status').textContent='Ejemplo ficticio cargado.';
  }
 };
 $('clear').onclick=()=>{
  if(!busy&&(!dirty||confirm('Hay cambios sin guardar. ¿Cerrar el archivo de trabajo?'))){
-  replaceRows([],false,false); $('pass').value=''; $('status').textContent='Archivo cerrado.';
+  replaceRows([],false,false); $('status').textContent='Archivo cerrado.';
  }
 };
 $('template').onclick=()=>download('plantilla-proavalme.csv','\ufeff'+csv([]),'text/csv;charset=utf-8');
-$('general').onclick=()=>{render(true); $('report').scrollIntoView();};
+function showView(view) {
+ for(const name of ['start','dashboard','files','reports']) $(name+'View').hidden=name!==view;
+ $('navigation').hidden=view==='start';
+ for(const button of $('navigation').children) button.setAttribute('aria-current',button.dataset.view===view?'page':'false');
+ window.scrollTo(0,0);
+}
+function setReportMode(mode) {
+ reportMode=mode;
+ $('customControls').hidden=mode!=='custom';
+ $('general').setAttribute('aria-pressed',String(mode==='general'));
+ $('custom').setAttribute('aria-pressed',String(mode==='custom'));
+ render(false);
+}
+function renderDashboard() {
+ const periods=[...new Set(rows.map(row=>row[0]))].sort();
+ $('dashboardState').textContent=rows.length
+  ? (fictional?'Datos ficticios':'Archivo de trabajo abierto')+(dirty?' · Cambios sin guardar':'')
+  : 'Aún no hay datos. Abre un histórico o incorpora un fichero en Cargar archivos.';
+ const cards=[['Registros',rows.length],['Periodos',periods.length],['Último periodo',periods.at(-1)??'—']];
+ $('dashboardStats').replaceChildren(...cards.map(([label,value])=>{
+  const card=element('div',label); card.className='stat'; card.append(element('strong',value)); return card;
+ }));
+ const counts=new Map();
+ for(const row of rows) counts.set(row[1],(counts.get(row[1])??0)+1);
+ $('dashboardMetrics').replaceChildren(...Object.entries(metrics).map(([metric,label])=>{
+  const button=element('button',label+' · '+(counts.get(metric)??0));
+  button.onclick=()=>{
+   render(true); $('filter0').value=metric; setReportMode('custom'); showView('reports');
+  };
+  return button;
+ }));
+}
+for(const button of $('navigation').children) button.onclick=()=>showView(button.dataset.view);
+$('enter').onclick=()=>showView('dashboard');
+$('general').onclick=()=>setReportMode('general');
+$('custom').onclick=()=>setReportMode('custom');
 function renderCatalog() {
  const query=$('catalogSearch').value.trim().toLocaleLowerCase('es');
  const scope=$('catalogScope').value;
