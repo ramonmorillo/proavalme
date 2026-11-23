@@ -55,6 +55,10 @@
 <div id="customControls" hidden>
 <nav id="modules" aria-label="Áreas del informe"></nav>
 <div id="filters"></div>
+<fieldset><legend>Comparar dos periodos</legend>
+<label>Periodo de referencia <select id="baseline"></select></label>
+<label>Periodo comparado <select id="comparison"></select></label>
+</fieldset>
 <label>Título del informe <textarea id="reportTitle" rows="1" maxlength="100" autocomplete="off" placeholder="Seguimiento PROA trimestral"></textarea></label>
 <label>Gráficos <select id="chartLimit"><option value="8">8 series</option><option value="24">24 series</option><option value="all">Todas</option><option value="0">Solo tablas</option></select></label>
 <label><span><input type="checkbox" id="showDetail" checked> Incluir tabla de detalle</span></label>
@@ -189,6 +193,50 @@ function selection() {
  return rows.filter(row=>filters.every(([,col],i)=>!picked[i] ||
   (i===4?row[col]>=picked[i]:i===5?row[col]<=picked[i]:i===6?(row[0].length===4?'Anual':'Trimestral')===picked[i]:row[col]===picked[i])));
 }
+function comparePeriods(records, baseline, comparison) {
+ const series = new Map();
+ for (const [period, metric, scope, group, item, units, value] of records) {
+  if (period !== baseline && period !== comparison) continue;
+  const identity = [metric, scope, group, item, units];
+  const key = JSON.stringify(identity.map(text=>text.toLocaleLowerCase('es')));
+  if (!series.has(key)) series.set(key, {identity});
+  series.get(key)[period === baseline ? 'before' : 'after'] = value;
+ }
+ return [...series.values()].map(({identity,before,after})=>{
+  const difference = before===undefined || after===undefined ? undefined : after-before;
+  const relative = difference===undefined || before===0 ? undefined : difference/before*100;
+  return {identity,before,after,difference,relative};
+ });
+}
+function renderComparison(page, records) {
+ const choices = [...new Set(records.map(row=>row[0]))].sort();
+ for (const id of ['baseline','comparison']) {
+  const control=$(id), value=control.value;
+  control.replaceChildren(new Option('Seleccionar',''),...choices.map(period=>new Option(period,period)));
+  control.value=choices.includes(value)?value:'';
+ }
+ const baseline=$('baseline').value, comparison=$('comparison').value;
+ if(!baseline || !comparison)return;
+ const section=element('section');
+ section.append(element('h2','Comparación de periodos'));
+ if(baseline===comparison || baseline.length!==comparison.length){
+  section.append(element('p','Selecciona dos periodos distintos de la misma periodicidad.'));
+  page.append(section); return;
+ }
+ const view=element('table'), header=view.createTHead().insertRow();
+ for(const title of ['Indicador','Ámbito o GFH','Grupo','Elemento','Unidad',baseline,comparison,'Diferencia','Variación relativa']){
+  const cell=element('th',title); cell.scope='col'; header.append(cell);
+ }
+ const body=view.createTBody(), display=value=>value===undefined?'Sin dato':format.format(value);
+ for(const {identity:[metric,scope,group,item,units],before,after,difference,relative} of comparePeriods(records,baseline,comparison)){
+  const row=body.insertRow();
+  const absolute=difference===undefined?'—':format.format(difference)+(units==='%'?' pp':'');
+  const variation=relative!==undefined?format.format(relative)+' %':difference!==undefined&&before===0?'Referencia cero':'—';
+  for(const value of [metrics[metric],scope,group,labelFor(item),units,display(before),display(after),absolute,variation])
+   row.insertCell().textContent=value;
+ }
+ const scroll=element('div'); scroll.className='scroll'; scroll.append(view); section.append(scroll); page.append(section);
+}
 function render(refresh) {
  if(refresh) $('filters').replaceChildren(...datesAndFilters(true));
  renderDashboard();
@@ -225,6 +273,7 @@ function render(refresh) {
     (first?' ('+format.format((last-first)/first*100)+' %)':' · Variación porcentual sin referencia distinta de cero')));
   page.append(block);
  }
+ if(reportMode==='custom')renderComparison(page,result);
  if(reportMode==='custom'&&!$('showDetail').checked)return;
  const details=element('section'); details.append(element('h2','Detalle'),
   result.length?table([...result].sort((a,b)=>a[0].localeCompare(b[0]))):element('p','No hay registros para esta selección.'));
@@ -465,6 +514,7 @@ $('catalogExport').onclick=()=>{
  download('catalogo-pirasoa-2025.csv','\ufeffcodigo;indicador;descripcion\r\n'+lines.join('\r\n'),'text/csv;charset=utf-8');
 };
 $('chartLimit').onchange=()=>render(false);
+ $('baseline').onchange=$('comparison').onchange=()=>render(false);
 $('showDetail').onchange=()=>render(false);
 $('reportTitle').oninput=()=>render(false);
 $('print').onclick=()=>window.print();
