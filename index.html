@@ -9,17 +9,22 @@
 <header><h1>PROA Valme</h1><p>Monitorización de antimicrobianos · Demostración con datos ficticios</p></header>
 <main>
 <section><h2>Importar un fichero de prueba</h2>
-<p>Utiliza un CSV ficticio con separador punto y coma. Puedes abrir y editar la plantilla en Excel. Los datos de la sesión se borran al cerrar o recargar la página.</p>
+<p>Utiliza un CSV ficticio con separador punto y coma. Puedes abrir y editar la plantilla en Excel. El histórico de prueba se guarda en este navegador. Usa únicamente datos ficticios.</p>
 <button id="template">Descargar plantilla CSV</button>
 <label for="file">Elegir CSV</label> <input id="file" type="file" accept=".csv">
 <p id="status" role="status"></p>
 <div class="scroll"><table id="preview" hidden></table></div>
+<p><label id="replaceLabel" hidden><input id="replace" type="checkbox"> Confirmo la sustitución completa de los trimestres indicados</label></p>
 <p><button id="apply" disabled>Incorporar datos</button></p></section>
 <section><h2>Consumo trimestral</h2>
 <label for="drug">Principio activo</label> <select id="drug"></select>
 <p>DDD por 1.000 estancias</p>
 <canvas id="chart" width="960" height="320" aria-label="Consumo trimestral. Valores en la tabla siguiente."></canvas>
-<p><button id="download">Descargar gráfico PNG</button></p>
+<p><button id="download">Descargar gráfico PNG</button> <button id="export">Exportar histórico CSV</button></p>
+<h3>Comparar dos trimestres</h3>
+<label for="base">Periodo de referencia</label> <select id="base"></select>
+<label for="comparison">Periodo comparado</label> <select id="comparison"></select>
+<p id="variation" role="status"></p>
 <div class="scroll"><table id="data"></table></div>
 </section></main>
 <footer>Prototipo de evaluación · Ramón Morillo</footer>
@@ -34,7 +39,7 @@ function parse(csv) {
   const seen = new Set();
   return lines.map((line,index) => {
     const [period, group, drug, value, ...extra] = line.split(';').map(cell => cell.trim());
-    if (!/^\d{4}-T[1-4]$/.test(period) || !group || !drug || !/^\d+(?:[.,]\d+)?$/.test(value) || extra.length) throw Error('Revisa el formato en la fila ' + (index+2) + '.');
+    if (!/^\d{4}-T[1-4]$/.test(period) || !group || !drug || !/^\d+(?:[.,]\d+)?$/.test(value) || extra.length || /^[=+@\-]/.test(group) || /^[=+@\-]/.test(drug) || /["]/.test(group + drug)) throw Error('Revisa el formato en la fila ' + (index+2) + '.');
     const rate = Number(value.replace(',','.'));
     if (!Number.isFinite(rate)) throw Error('Valor fuera de rango en la fila ' + (index+2) + '.');
     const key = JSON.stringify([period,drug.toLocaleLowerCase('es')]);
@@ -43,7 +48,36 @@ function parse(csv) {
     return [period,group,drug,rate];
   });
 }
-let rows = parse(sample), pending = [];
+const storageKey = 'proavalme-demo-v1';
+const header = sample.split('\n')[0];
+const csvFor = rows => [header,...rows.map(row => row.join(';'))].join('\n');
+let snapshot = null;
+let rows = parse(sample), pending = [], overlap = [];
+try {
+  snapshot = localStorage.getItem(storageKey);
+  if (snapshot !== null) rows = parse(snapshot);
+} catch {
+  byId('status').textContent = 'No se ha podido recuperar el histórico local.';
+}
+function compare() {
+  const selected = byId('drug').value;
+  const base = byId('base').value;
+  const comparison = byId('comparison').value;
+  const start = rows.find(row => row[2] === selected && row[0] === base)?.[3];
+  const end = rows.find(row => row[2] === selected && row[0] === comparison)?.[3];
+  const output = byId('variation');
+  if (base === comparison) {
+    output.textContent = 'Selecciona dos trimestres distintos.';
+    return;
+  }
+  if (start === undefined || end === undefined) {
+    output.textContent = 'Falta el dato del principio activo en uno o ambos periodos.';
+    return;
+  }
+  const delta = end - start;
+  const percent = start === 0 ? 'Variación porcentual no calculable con referencia cero.' : 'Variación porcentual ' + number.format(delta / start * 100) + ' %.';
+  output.textContent = number.format(start) + ' → ' + number.format(end) + ' DDD/1.000 estancias. Diferencia ' + number.format(delta) + '. ' + percent;
+}
 function table(id, records) {
   const target = byId(id);
   target.replaceChildren();
@@ -95,7 +129,14 @@ function refresh() {
   const drugs = [...new Set(rows.map(row => row[2]))].sort((a,b) => a.localeCompare(b,'es'));
   select.replaceChildren(...drugs.map(drug => new Option(drug,drug)));
   if (drugs.includes(previous)) select.value = previous;
+  const available = [...periods(rows)].sort();
+  for (const [id, fallback] of [['base', available.at(-2) ?? available[0]], ['comparison', available.at(-1)]]) {
+    const control = byId(id), previousPeriod = control.value;
+    control.replaceChildren(...available.map(period => new Option(period,period)));
+    control.value = available.includes(previousPeriod) ? previousPeriod : fallback;
+  }
   draw();
+  compare();
 }
 function download(url,name) {
   const anchor = document.createElement('a');
@@ -103,17 +144,33 @@ function download(url,name) {
   anchor.download=name;
   anchor.click();
 }
-byId('template').onclick = () => {
-  const url = URL.createObjectURL(new Blob(['\uFEFF',sample],{type:'text/csv;charset=utf-8'}));
-  download(url,'plantilla-proavalme.csv');
+function downloadCsv(csv,name) {
+  const url = URL.createObjectURL(new Blob(['\uFEFF',csv],{type:'text/csv;charset=utf-8'}));
+  download(url,name);
   setTimeout(() => URL.revokeObjectURL(url),1000);
+}
+byId('template').onclick = () => {
+  const available = periods(rows);
+  let year = 2025, quarter = 1;
+  while (available.has(year + '-T' + quarter)) {
+    quarter++;
+    if (quarter > 4) { year++; quarter = 1; }
+  }
+  downloadCsv(header + '\n' + year + '-T' + quarter + ';Carbapenémicos;Meropenem;18,4','plantilla-proavalme.csv');
 };
+byId('export').onclick = () => downloadCsv(csvFor(rows),'historico-proavalme-ficticio.csv');
 byId('download').onclick = () => download(byId('chart').toDataURL('image/png'),'consumo-ficticio.png');
-byId('drug').onchange = draw;
+byId('drug').onchange = () => { draw(); compare(); };
+byId('base').onchange = compare;
+byId('comparison').onchange = compare;
+byId('replace').onchange = () => { byId('apply').disabled = !pending.length || !byId('replace').checked; };
 let request = 0;
 byId('file').onchange = async event => {
   const id = ++request;
   pending = [];
+  overlap = [];
+  byId('replace').checked = false;
+  byId('replaceLabel').hidden = true;
   byId('apply').disabled = true;
   byId('preview').hidden = true;
   byId('status').textContent = '';
@@ -123,25 +180,40 @@ byId('file').onchange = async event => {
     const records = parse(await file.text());
     if(id !== request) return;
     const existing = periods(rows);
-    const overlap = [...periods(records)].filter(period => existing.has(period));
-    byId('status').textContent = records.length + ' filas listas para incorporar.' + (overlap.length ? ' Ya existe ' + overlap.join(', ') + '. Esta demo conserva el histórico. Prueba con un trimestre nuevo.' : '');
+    overlap = [...periods(records)].filter(period => existing.has(period));
+    byId('status').textContent = records.length + ' filas detectadas. Vista previa de hasta 10 filas.' + (overlap.length ? ' Periodos existentes: ' + overlap.join(', ') + '. Al sustituirlos se eliminan sus filas anteriores, incluidas las que falten en el fichero nuevo.' : '');
     table('preview',records.slice(0,10));
     byId('preview').hidden = false;
-    if (overlap.length) return;
     pending = records;
-    byId('apply').disabled = false;
+    byId('replaceLabel').hidden = !overlap.length;
+    byId('apply').disabled = Boolean(overlap.length);
+    byId('apply').textContent = overlap.length ? 'Sustituir e incorporar' : 'Incorporar datos';
   } catch (error) {
     if(id === request) byId('status').textContent = error.message;
   }
 };
 byId('apply').onclick = () => {
-  if (!pending.length) return;
-  rows = [...rows,...pending];
+  if (!pending.length || (overlap.length && !byId('replace').checked)) return;
+  const updated = [...rows.filter(row => !overlap.includes(row[0])),...pending];
+  try {
+    if (localStorage.getItem(storageKey) !== snapshot) {
+      byId('status').textContent = 'El histórico cambió en otra pestaña. Recarga antes de incorporar.';
+      return;
+    }
+    const next = csvFor(updated);
+    localStorage.setItem(storageKey,next);
+    snapshot = next;
+  } catch {
+    byId('status').textContent = 'No se ha podido guardar el histórico en este navegador.';
+    return;
+  }
+  rows = updated;
+  byId('replaceLabel').hidden = true;
   pending = [];
   byId('apply').disabled = true;
   byId('preview').hidden = true;
   byId('file').value = '';
-  byId('status').textContent = 'Datos incorporados a esta sesión.';
+  byId('status').textContent = 'Datos incorporados al histórico de este navegador.';
   refresh();
 };
 refresh();
