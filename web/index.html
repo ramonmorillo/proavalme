@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>PROA Valme</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#eff5f6;color:#16343c;font:16px system-ui}header{background:#103d47;color:white;padding:2rem max(5vw,1rem)}h1{margin:0}main{max-width:1120px;margin:auto;padding:1rem}section{background:white;border:1px solid #cadae0;border-radius:12px;padding:1.25rem;margin-bottom:1rem}h2{margin-top:0}button,input,select{font:inherit;padding:.5rem}button{background:#075e55;border:0;border-radius:5px;color:white;cursor:pointer}button:disabled{opacity:.5}[hidden]{display:none!important}label{display:inline-grid;gap:.3rem;margin:.35rem .45rem .35rem 0}.scroll{overflow:auto}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.5rem;border-bottom:1px solid #d8e3e6}.bar{display:grid;grid-template-columns:85px 1fr 95px;gap:.65rem;align-items:center;margin:.3rem 0}meter{width:100%}footer{padding:1rem 5vw}[role=status]{min-height:1.4em}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #a75b00;outline-offset:3px}@media print{header,footer,.controls{display:none!important}body{background:white}main,section{padding:0;border:0}tr,.bar{break-inside:avoid}thead{display:table-header-group}}
+</style>
+</head>
+<body>
+<header><h1>PROA Valme</h1><p>Panel de consumo, gasto y microbiología</p></header>
+<main>
+<section class="controls">
+<h2>Archivo de trabajo</h2>
+<p>Los ficheros se procesan en el navegador. Guarda el histórico cifrado antes de cerrar la página. Si pierdes el código, no podrás recuperar ese archivo.</p>
+<label>Código del archivo <input id="pass" type="password" autocomplete="off" minlength="14"></label>
+<label>Abrir histórico <input id="open" type="file" accept=".proavalme"></label>
+<button id="save">Guardar histórico cifrado</button>
+<button id="demo">Cargar datos ficticios</button>
+<p id="status" role="status"></p>
+</section>
+<section class="controls">
+<h2>Importar datos</h2>
+<p>Usa un XLSX en formato de plantilla o un CSV UTF-8. El XLS histórico de Valme tiene un formato específico que requiere conversión.</p>
+<button id="template">Descargar plantilla CSV</button>
+<label>Seleccionar fichero <input id="import" type="file" accept=".csv,.xlsx"></label>
+<p id="review" role="status"></p>
+<div class="scroll" id="preview"></div>
+<label id="replaceLabel" hidden><span><input id="replace" type="checkbox"> Confirmo la sustitución completa de los bloques indicados</span></label>
+<button id="apply" disabled>Incorporar</button>
+</section>
+<section class="controls">
+<h2>Filtros e informes</h2>
+<div id="filters"></div>
+<button id="general">Informe general</button>
+<button id="print">Imprimir / guardar PDF filtrado</button>
+<button id="export">Exportar CSV filtrado</button>
+</section>
+<div id="report"></div>
+</main><footer>Servicio de Farmacia Hospitalaria · Desarrollo Ramón Morillo</footer>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const schema = ['periodo','indicador','ambito','grupo','elemento','unidad','valor'];
+const metrics = {consumo:'Consumo', gasto:'Gasto', microbiologia:'Microbiología'};
+const filters = [['Indicador',1],['Ámbito o GFH',2],['Grupo',3],['Elemento',4],['Desde',0],['Hasta',0]];
+const unit = 'DDD/1.000 estancias';
+const samples = [
+ ['2025-T1','consumo','Hospital','Carbapenémicos','Meropenem',unit,22],
+ ['2025-T2','consumo','Hospital','Carbapenémicos','Meropenem',unit,18],
+ ['2025-T1','gasto','Ingresados','Total','Antimicrobianos','EUR',1234],
+ ['2025-T2','gasto','Ingresados','Total','Antimicrobianos','EUR',1360],
+ ['2025-T1','microbiologia','Hospital','Densidad','Indicador ficticio','Unidad de prueba',0.5],
+ ['2025-T2','microbiologia','Hospital','Densidad','Indicador ficticio','Unidad de prueba',0]
+];
+let rows = [], pending = [], overlaps = [], dirty = false, fictional = false, busy = false, reading = 0;
+const encoder = new TextEncoder();
+const decoder = new TextDecoder('utf-8',{fatal:true});
+const format = new Intl.NumberFormat('es-ES',{maximumFractionDigits:4});
+function element(tag,text) {
+ const node = document.createElement(tag);
+ if (text !== undefined) node.textContent = text;
+ return node;
+}
+function csvRows(text) {
+ const delimiter = text.split(/\r?\n/,1)[0].includes(';') ? ';' : ',';
+ const record = new RegExp('(?:"((?:[^"]|"")*)"|([^"'+delimiter+'\\r\\n]*))('+delimiter+'|\\r?\\n|$)','gy');
+ const result = []; let row = [];
+ while (record.lastIndex < text.length) {
+  const item = record.exec(text);
+  if (!item) throw Error('CSV mal formado.');
+  row.push(item[1] === undefined ? item[2] : item[1].replaceAll('""','"'));
+  if (item[3] !== delimiter) { result.push(row); row=[]; }
+ }
+ if (row.length) result.push([...row,'']);
+ return result;
+}
+function normalize(source, header = true) {
+ if (!Array.isArray(source) || source.length > 12001) throw Error('Máximo 12.000 filas por fichero.');
+ const clean = value => String(value ?? '').trim();
+ if (header && (!Array.isArray(source[0]) || source[0].map(clean).join(';').toLowerCase() !== schema.join(';')))
+  throw Error('La cabecera debe coincidir con la plantilla.');
+ const keys = new Set(), result = [];
+ source.slice(header ? 1 : 0).forEach((raw,index) => {
+  if (!Array.isArray(raw)) throw Error('Estructura de fila inválida.');
+  const row = raw.map(clean);
+  if (!row.some(Boolean)) return;
+  const [period, metric, scope, group, item, units, value] = row;
+  if (row.length !== 7 || row.some(cell => cell.length > 160) || !/^20\d\d(?:-T[1-4])?$/.test(period)
+      || !Object.hasOwn(metrics,metric) || !scope || !group || !item || !units
+      || (metric === 'consumo' && units !== unit) || (metric === 'gasto' && units !== 'EUR')
+      || !/^\d+(?:[.,]\d+)?$/.test(value) || !Number.isFinite(Number(value.replace(',','.')))
+      || [scope,group,item,units].some(text => /^[=+@-]/.test(text)))
+   throw Error('Revisa los campos y la unidad de la fila ' + (index + (header ? 2 : 1)) + '.');
+  const key = JSON.stringify(row.slice(0,5).map(value=>value.toLocaleLowerCase('es')));
+  if (keys.has(key)) throw Error('Registro duplicado en fila ' + (index + (header ? 2 : 1)) + '.');
+  keys.add(key); result.push([period,metric,scope,group,item,units,Number(value.replace(',','.'))]);
+ });
+ if (!result.length) throw Error('El fichero no contiene datos.');
+ return result;
+}
+function csv(records) {
+ return [schema,...records].map(row=>row.map(value => '"'+String(typeof value==='number'?String(value).replace('.',','):value).replaceAll('"','""')+'"').join(';')).join('\r\n');
+}
+function download(name, bytes, type) {
+ const url=URL.createObjectURL(new Blob([bytes],{type}));
+ const link=element('a');
+ link.href=url; link.download=name; link.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+function table(records) {
+ const table=element('table'), head=table.createTHead().insertRow();
+ for(const label of ['Periodo','Indicador','Ámbito','Grupo','Elemento','Unidad','Valor']) {
+  const th=element('th',label); th.scope='col'; head.append(th);
+ }
+ const body=table.createTBody();
+ for(const row of records) {
+  const line=body.insertRow();
+  row.forEach((value,i)=>line.insertCell().textContent=i===1?metrics[value]:i===6?format.format(value):value);
+ }
+ const wrap=element('div'); wrap.className='scroll'; wrap.append(table); return wrap;
+}
+function resetPending() {
+ reading++; pending=[]; overlaps=[]; $('preview').replaceChildren(); $('review').textContent='';
+ $('replace').checked=false; $('replaceLabel').hidden=true; $('apply').disabled=true; $('import').value='';
+}
+function replaceRows(next, demo, changed) {
+ rows=next; fictional=demo; dirty=changed; resetPending(); render(true);
+}
+function datesAndFilters(reset) {
+ return filters.map(([label,col],i)=>{
+  const parent=element('label',label+' '), list=element('select');
+  const before=reset?'':$('filter'+i)?.value ?? '';
+  list.id='filter'+i; list.add(new Option(i===4?'Inicio':i===5?'Final':'Todos',''));
+  for (const value of [...new Set(rows.map(row=>row[col]))].sort((a,b)=>a.localeCompare(b,'es')))
+   list.add(new Option(col===1?metrics[value]:value,value));
+  if ([...list.options].some(option=>option.value===before)) list.value=before;
+  list.onchange=()=>render(false); parent.append(list); return parent;
+ });
+}
+function selection() {
+ const picked=filters.map((_,i)=>$('filter'+i).value);
+ return rows.filter(row=>filters.every(([,col],i)=>!picked[i] ||
+  (i===4?row[col]>=picked[i]:i===5?row[col]<=picked[i]:row[col]===picked[i])));
+}
+function render(refresh) {
+ if(refresh) $('filters').replaceChildren(...datesAndFilters(true));
+ const result=selection(), page=$('report'); page.replaceChildren();
+ const summary=element('section');
+ const activeFilters=filters.map(([label],i)=>{const control=$('filter'+i);return control.value?label+' '+control.selectedOptions[0].text:'';}).filter(Boolean);
+ summary.append(element('h2',activeFilters.length?'Informe personalizado PROA Valme':'Informe general PROA Valme'),
+  element('p',activeFilters.join(' · ')),
+  element('p',result.length+' registros · '+new Set(result.map(row=>row[0])).size+' periodos'+(fictional?' · Contiene datos ficticios':'')));
+ page.append(summary);
+ const groups=new Map();
+ for(const row of result) {
+  const [period,metric,scope,group,item,units]=row;
+  const key=JSON.stringify([metric,scope,group,item,units,period.length]);
+  if(!groups.has(key)) groups.set(key,[]);
+  groups.get(key).push(row);
+ }
+ for(const series of [...groups.values()].filter(group=>group.length>1).slice(0,8)) {
+  const block=element('section'), ordered=[...series].sort((a,b)=>a[0].localeCompare(b[0]));
+  const [,metric,scope,group,item,units]=ordered[0];
+  block.append(element('h2',item),element('p',[metrics[metric],scope,group,units].join(' · ')));
+  const maximum=Math.max(1,...ordered.map(row=>row[6]));
+  for(const row of ordered) {
+   const line=element('div'); line.className='bar';
+   const meter=element('meter'); meter.max=maximum; meter.value=row[6]; meter.setAttribute('aria-label',row[0]);
+   line.append(element('span',row[0]),meter,element('span',format.format(row[6]))); block.append(line);
+  }
+  const first=ordered[0][6], last=ordered.at(-1)[6];
+  block.append(element('p','Diferencia entre primer y último periodo '+format.format(last-first)+
+    (first?' ('+format.format((last-first)/first*100)+' %)':' · Variación porcentual sin referencia distinta de cero')));
+  page.append(block);
+ }
+ const details=element('section'); details.append(element('h2','Detalle'),
+  result.length?table([...result].sort((a,b)=>a[0].localeCompare(b[0]))):element('p','No hay registros para esta selección.'));
+ page.append(details);
+}
+function blockKey(row) {return JSON.stringify(row.slice(0,3).map(value=>value.toLocaleLowerCase('es')));}
+function inspect(records) {
+ const current=new Set(rows.map(blockKey));
+ overlaps=[...new Set(records.map(blockKey).filter(key=>current.has(key)))];
+ pending=records;
+ $('preview').replaceChildren(table(records.slice(0,12)));
+ $('review').textContent=records.length+' filas válidas. Vista previa de hasta 12.'+
+  (overlaps.length?' La sustitución borra las filas previas de estos bloques: '+overlaps.map(key=>JSON.parse(key).join(' / ')).join('; ')+'.':'');
+ $('replaceLabel').hidden=!overlaps.length;
+ $('apply').disabled=Boolean(overlaps.length);
+}
+function reportError(error) {$('status').textContent=error.message;}
+function password() {
+ if (!globalThis.crypto?.subtle) throw Error('El navegador necesita HTTPS o un archivo local para cifrar.');
+ const value=$('pass').value;
+ if(value.length<14) throw Error('Introduce un código de al menos 14 caracteres.');
+ return value;
+}
+async function keyFor(pass,salt) {
+ const base=await crypto.subtle.importKey('raw',encoder.encode(pass),'PBKDF2',false,['deriveKey']);
+ return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:600000,hash:'SHA-256'},base,
+  {name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+}
+const magic=encoder.encode('PROAVALME1');
+async function seal(data,pass) {
+ const salt=crypto.getRandomValues(new Uint8Array(16)), iv=crypto.getRandomValues(new Uint8Array(12));
+ const ciphertext=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:magic},await keyFor(pass,salt),
+  encoder.encode(JSON.stringify(data)));
+ const result=new Uint8Array(38+ciphertext.byteLength);
+ result.set(magic); result.set(salt,10); result.set(iv,26); result.set(new Uint8Array(ciphertext),38);
+ return result;
+}
+async function unseal(data,pass) {
+ if(data.length<54 || !magic.every((byte,index)=>byte===data[index])) throw Error('Formato de histórico inválido.');
+ try {
+  const clear=await crypto.subtle.decrypt({name:'AES-GCM',iv:data.slice(26,38),additionalData:magic},
+   await keyFor(pass,data.slice(10,26)),data.slice(38));
+  const payload=JSON.parse(decoder.decode(clear));
+  if(typeof payload.fictional!=='boolean') throw Error();
+  return {rows:normalize(payload.rows,false),fictional:payload.fictional};
+ } catch {throw Error('No se ha podido abrir el histórico. Comprueba el código y el archivo.');}
+}
+async function workbook(buffer) {
+ const view=new DataView(buffer), bytes=new Uint8Array(buffer);
+ const u16=offset=>view.getUint16(offset,true), u32=offset=>view.getUint32(offset,true);
+ let end=buffer.byteLength-22;
+ while(end>=Math.max(0,buffer.byteLength-65557) && u32(end)!==0x06054b50) end--;
+ if(end<Math.max(0,buffer.byteLength-65557)) throw Error('El Excel no es un XLSX válido.');
+ const entries=new Map();
+ let cursor=u32(end+16);
+ for(let n=0;n<u16(end+10);n++){
+  if(u32(cursor)!==0x02014b50) throw Error('Índice XLSX inválido.');
+  const nameLength=u16(cursor+28);
+  const metadata=[u16(cursor+10),u32(cursor+20),u32(cursor+24),u32(cursor+42)];
+  entries.set(decoder.decode(bytes.slice(cursor+46,cursor+46+nameLength)),metadata);
+  cursor+=46+nameLength+u16(cursor+30)+u16(cursor+32);
+ }
+ async function xml(path) {
+  const entry=entries.get(path);
+  if(!entry) throw Error('Falta un componente del XLSX.');
+  const [method,size,expanded,offset]=entry;
+  if(expanded>15_000_000 || u32(offset)!==0x04034b50 || ![0,8].includes(method)) throw Error('Componente XLSX inválido.');
+  const start=offset+30+u16(offset+26)+u16(offset+28);
+  let content=bytes.slice(start,start+size);
+  if(method===8){
+   const stream=new Blob([content]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+   const chunks=[]; let length=0;
+   while(true){
+    const part=await stream.read();
+    if(part.done) break;
+    length+=part.value.length;
+    if(length>15_000_000){await stream.cancel();throw Error('Componente XLSX demasiado grande.');}
+    chunks.push(part.value);
+   }
+   content=new Uint8Array(await new Blob(chunks).arrayBuffer());
+  }
+  const document=new DOMParser().parseFromString(decoder.decode(content),'application/xml');
+  if(document.querySelector('parsererror') || document.doctype) throw Error('Contenido XLSX inválido.');
+  return document;
+ }
+ const book=await xml('xl/workbook.xml'), relationships=await xml('xl/_rels/workbook.xml.rels');
+ const sheets=[...book.getElementsByTagNameNS('*','sheet')];
+ const sheet=sheets.find(node=>node.getAttribute('name')==='Datos') ?? sheets[0];
+ if(!sheet) throw Error('El Excel no tiene hojas.');
+ const relation=[...relationships.getElementsByTagNameNS('*','Relationship')].find(node=>node.getAttribute('Id')===
+  sheet.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id'));
+ const target=relation?.getAttribute('Target') ?? '';
+ const path=target.startsWith('/')?target.slice(1):'xl/'+target;
+ if(!/^xl\/worksheets\/[^/]+\.xml$/.test(path)) throw Error('Hoja XLSX no compatible.');
+ const shared=entries.has('xl/sharedStrings.xml')?[...(await xml('xl/sharedStrings.xml')).getElementsByTagNameNS('*','si')].map(n=>n.textContent):[];
+ return [...(await xml(path)).getElementsByTagNameNS('*','row')].map(row=>{
+  const values=Array(7).fill('');
+  for(const cell of row.getElementsByTagNameNS('*','c')){
+   const ref=/^([A-Z]+)\d+$/.exec(cell.getAttribute('r')??'');
+   if(!ref) throw Error('Referencia de celda XLSX inválida.');
+   const type=cell.getAttribute('t'), raw=cell.getElementsByTagNameNS('*','v')[0]?.textContent ?? '';
+   const value=type==='s'?shared[Number(raw)]:type==='inlineStr'?cell.getElementsByTagNameNS('*','is')[0]?.textContent:raw;
+   if(ref[1].length>1 || ref[1]>'G'){if(value) throw Error('La hoja contiene columnas adicionales.');continue;}
+   values[ref[1].charCodeAt(0)-65]=value;
+  }
+  return values;
+ });
+}
+$('import').onchange=async()=>{
+ const file=$('import').files[0]; resetPending(); const sequence=reading;
+ if(!file) return;
+ try{
+  if(file.size>8_000_000) throw Error('El fichero supera 8 MB.');
+  const bytes=await file.arrayBuffer();
+  const data=/\.xlsx$/i.test(file.name)?await workbook(bytes):csvRows(decoder.decode(bytes));
+  if(sequence===reading) inspect(normalize(data));
+ }catch(error){if(sequence===reading) $('review').textContent=error.message;}
+};
+$('replace').onchange=()=>$('apply').disabled=Boolean(overlaps.length&&!$('replace').checked);
+$('apply').onclick=()=>{
+ if(busy || !pending.length || (overlaps.length&&!$('replace').checked)) return;
+ try {
+  replaceRows(normalize([...rows.filter(row=>!overlaps.includes(blockKey(row))),...pending],false),fictional,true);
+  $('status').textContent='Carga incorporada. Guarda el histórico cifrado para conservarla.';
+ } catch(error){reportError(error);}
+};
+$('save').onclick=async()=>{
+ if(busy)return;
+ busy=true;
+ try{
+  if(!rows.length)throw Error('Incorpora datos antes de guardar.');
+  const bytes=await seal({rows,fictional},password());
+  download('historico-proavalme.proavalme',bytes,'application/octet-stream');
+  $('pass').value=''; dirty=false; $('status').textContent='Descarga iniciada. Comprueba que el archivo se ha guardado.';
+ }catch(error){reportError(error);}finally{busy=false;}
+};
+$('open').onchange=async()=>{
+ const file=$('open').files[0]; $('open').value='';
+ if(!file||busy||(dirty&&!confirm('Hay cambios sin guardar. ¿Abrir otro histórico?')))return;
+ busy=true;
+ try{
+  if(file.size>16_000_000)throw Error('El archivo supera 16 MB.');
+  const data=await unseal(new Uint8Array(await file.arrayBuffer()),password());
+  replaceRows(data.rows,data.fictional,false); $('pass').value=''; $('status').textContent='Histórico recuperado.';
+ }catch(error){reportError(error);}finally{busy=false;}
+};
+$('demo').onclick=()=>{
+ if(!busy&&(!dirty||confirm('Hay cambios sin guardar. ¿Cargar datos ficticios?')))replaceRows(samples,true,false);
+};
+$('template').onclick=()=>download('plantilla-ficticia.csv','\ufeff'+csv(samples),'text/csv;charset=utf-8');
+$('general').onclick=()=>{render(true); $('report').scrollIntoView();};
+$('print').onclick=()=>window.print();
+$('export').onclick=()=>download('informe-proavalme.csv','\ufeff'+csv(selection()),'text/csv;charset=utf-8');
+addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
+render(true);
+</script>
+</body>
+</html>
