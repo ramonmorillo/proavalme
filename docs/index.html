@@ -4,14 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
-<title>PROA Valme</title>
+<title>PROA Valme · PIRASOA</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#eff5f6;color:#16343c;font:16px system-ui}header{background:#103d47;color:white;padding:2rem max(5vw,1rem)}h1{margin:0}main{max-width:1120px;margin:auto;padding:1rem}section{background:white;border:1px solid #cadae0;border-radius:12px;padding:1.25rem;margin-bottom:1rem}h2{margin-top:0}button,input,select{font:inherit;padding:.5rem}button{background:#075e55;border:0;border-radius:5px;color:white;cursor:pointer}button:disabled{opacity:.5}[hidden]{display:none!important}label{display:inline-grid;gap:.3rem;margin:.35rem .45rem .35rem 0}.scroll{overflow:auto}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.5rem;border-bottom:1px solid #d8e3e6}.bar{display:grid;grid-template-columns:85px 1fr 95px;gap:.65rem;align-items:center;margin:.3rem 0}meter{width:100%}footer{padding:1rem 5vw}[role=status]{min-height:1.4em}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #a75b00;outline-offset:3px}@media print{header,footer,.controls{display:none!important}body{background:white}main,section{padding:0;border:0}tr,.bar{break-inside:avoid}thead{display:table-header-group}}
+*{box-sizing:border-box}body{margin:0;background:#eff5f6;color:#16343c;font:16px system-ui}header{background:#103d47;color:white;padding:2rem max(5vw,1rem)}h1{margin:0}main{max-width:1120px;margin:auto;padding:1rem}section{background:white;border:1px solid #cadae0;border-radius:12px;padding:1.25rem;margin-bottom:1rem}h2{margin-top:0}button,input,select{font:inherit;padding:.5rem}button{background:#075e55;border:0;border-radius:5px;color:white;cursor:pointer}button:disabled{opacity:.5}[hidden]{display:none!important}label{display:inline-grid;gap:.3rem;margin:.35rem .45rem .35rem 0}.catalog{background:#fff;border:1px solid #cadae0;border-radius:12px;padding:1rem}.catalog summary{cursor:pointer;font-weight:650}nav{display:flex;flex-wrap:wrap;gap:.55rem;margin:.6rem 0}nav button[aria-pressed="true"]{background:#103d47;box-shadow:0 0 0 2px #103d47}.scroll{overflow:auto}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.5rem;border-bottom:1px solid #d8e3e6}.bar{display:grid;grid-template-columns:85px 1fr 95px;gap:.65rem;align-items:center;margin:.3rem 0}meter{width:100%}footer{padding:1rem 5vw}[role=status]{min-height:1.4em}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #a75b00;outline-offset:3px}@media print{header,footer,.controls{display:none!important}body{background:white}main,section{padding:0;border:0}tr,.bar{break-inside:avoid}thead{display:table-header-group}}
 </style>
 </head>
 <body>
-<header><h1>PROA Valme</h1><p>Panel de consumo, gasto y microbiología</p></header>
+<header><h1>PROA Valme</h1><p>Seguimiento PIRASOA y farmacoterapia antimicrobiana</p></header>
 <main>
+<section class="controls">
+<h2>Panel de seguimiento</h2>
+<nav id="modules" aria-label="Módulos del panel"></nav>
+<label>Nombre del informe <input id="reportTitle" maxlength="100" placeholder="Seguimiento PROA trimestral"></label>
+<label>Gráficos <select id="chartLimit"><option value="8">8 series</option><option value="24">24 series</option><option value="all">Todas</option><option value="0">Solo tablas</option></select></label>
+<label><span><input type="checkbox" id="showDetail" checked> Incluir tabla de detalle</span></label>
+</section>
 <section class="controls">
 <h2>Archivo de trabajo</h2>
 <p>Los ficheros se procesan en el navegador. Guarda el histórico cifrado antes de cerrar la página. Si pierdes el código, no podrás recuperar ese archivo.</p>
@@ -40,15 +47,31 @@
 <button id="export">Exportar CSV filtrado</button>
 </section>
 <div id="report"></div>
+<details class="controls catalog"><summary>Catálogo PIRASOA 2025 · Hospitales y distritos</summary>
+<p>Para vincular un registro al catálogo, introduce el código PIRASOA en la columna «elemento». Los códigos enumerados indican cobertura disponible en el modelo. Carga los valores antes de emitir un informe.</p>
+<label>Buscar por código o descripción <input id="catalogSearch" type="search"></label>
+<label>Ámbito del catálogo <select id="catalogScope"><option value="">Todos</option><option value="hospital">Hospitales</option><option value="district">Distritos</option></select></label>
+<button id="catalogExport">Descargar catálogo CSV</button>
+<div id="catalogRows"></div></details>
 </main><footer>Servicio de Farmacia Hospitalaria · Desarrollo Ramón Morillo</footer>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
 const schema = ['periodo','indicador','ambito','grupo','elemento','unidad','valor'];
-const metrics = {consumo:'Consumo', gasto:'Gasto', microbiologia:'Microbiología'};
-const filters = [['Indicador',1],['Ámbito o GFH',2],['Grupo',3],['Elemento',4],['Desde',0],['Hasta',0]];
+const metrics = {consumo:'Consumo', gasto:'Gasto', microbiologia:'Microbiología', higiene:'Prevención e higiene', adecuacion:'Adecuación del tratamiento', mortalidad:'Mortalidad por bacteriemia'};
+const catalog = {"PROAD001": ["adecuacion", "Tasa global de tratamientos antimicrobianos inadecuados"], "PROAD002": ["adecuacion", "Tasa de tratamientos antimicrobianos inadecuados en tratamiento empírico"], "PROAD003": ["adecuacion", "Tasa de tratamientos antimicrobianos inadecuados en tratamiento dirigido"], "PROAD004": ["microbiologia", "Incidencia acumulada de pacientes con infección/colonización por S. aureus resistente a meticilina"], "PROAD005": ["microbiologia", "Incidencia acumulada de pacientes con infección/colonización por E. coli resistente a ciprofloxacino"], "PROAD006": ["microbiologia", "Incidencia acumulada de pacientes con infección/colonización por E. coli resistente a A. clavulánico"], "PROAD007": ["microbiologia", "Incidencia acumulada de pacientes con infección/colonización por E. coli BLEE"], "PROAD008": ["microbiologia", "Incidencia acumulada de pacientes con infección/colonización por K. pneumoniae BLEE"], "PROAD009": ["microbiologia", "Incidencia acumulada de pacientes con infección/colonización por S. pneumoniae resistente a penicilina"], "PROAD010": ["microbiologia", "Incidencia acumulada de pacientes con infección/colonización por S. pyogenes resistentes a eritromicina"], "PROAD011": ["microbiologia", "Incidencia acumulada de pacientes con infección/colonización por H. influenzae resistente a amoxicilina/clavulánico"], "PROAD012": ["microbiologia", "Incidencia acumulada de pacientes con de infecciones por Salmonella spp. resistente a ciprofloxacino"], "PROAD013": ["consumo", "DDD de amoxicilina por 1000 habitantes y día"], "PROAD014": ["consumo", "DDD de amoxicilina/ácido clavulánico por 1000 habitantes y día"], "PROAD015": ["consumo", "DDD de cefadroxilo por 1000 habitantes y día"], "PROAD016": ["consumo", "DDD de ceftibuteno por 1000 habitantes y día"], "PROAD017": ["consumo", "DDD de cefuroxima por 1000 habitantes y día"], "PROAD018": ["consumo", "DDD de cefixima por 1000 habitantes y día"], "PROAD019": ["consumo", "DDD de ciprofloxacino por 1000 habitantes y día"], "PROAD020": ["consumo", "DDD de levofloxacino por 1000 habitantes y día"], "PROAD021": ["consumo", "DDD de moxifloxacino por 1000 habitantes y día"], "PROAD022": ["consumo", "DDD de cotrimoxazol por 1000 habitantes y día"], "PROAD023": ["consumo", "DDD de clindamicina por 1000 habitantes y día"], "PROAD024": ["consumo", "DDD de metronidazol por 1000 habitantes y día"], "PROAD025": ["consumo", "DDD de eritromicina por 1000 habitantes y día"], "PROAD026": ["consumo", "DDD de claritromicina por 1000 habitantes y día"], "PROAD027": ["consumo", "DDD de azitromicina por 1000 habitantes y día"], "PROAD028": ["consumo", "DDD de fluconazol por 1000 habitantes y día"], "PROAD029": ["consumo", "DDD de itraconazol por 1000 habitantes y día"], "PROAD030": ["consumo", "DDD de fosfomicina por 1000 habitantes y día"], "PROAD031": ["consumo", "DDD de nitrofurantoína por 1000 habitantes y día"], "PROAD033": ["consumo", "DDD Total de Antimicrobianos por 1000 habitantes días"], "PROAD032": ["gasto", "Gasto total en antibióticos y antifúngicos"], "IRASH065": ["higiene", "Porcentaje de adherencia a las indicaciones de higiene de manos"], "IRASH066": ["higiene", "Porcentaje de cumplimiento de las medidas preventivas en Neumonía zero"], "IRASH067": ["higiene", "Porcentaje de cumplimento de listado de verificación Bacteriemia zero"], "IRASH068": ["higiene", "Porcentaje de Cumplimiento de las medidas de aislamiento de contacto"], "IRASH069": ["microbiologia", "Densidad de incidencia de pacientes ingresados con S. aureus resistente a meticilina"], "IRASH070": ["microbiologia", "Densidad de incidencia de pacientes ingresados con Enterococcus resistente a vancomicina"], "IRASH071": ["microbiologia", "Densidad de incidencia de pacientes ingresados con E. coli BLEE"], "IRASH072": ["microbiologia", "Densidad de incidencia de pacientes ingresados con K. pneumoniae BLEE"], "IRASH073": ["microbiologia", "Densidad de incidencia de pacientes ingresados con Enterobacterias productoras de carbapenemasas"], "IRASH074": ["microbiologia", "Densidad de incidencia de pacientes ingresados con P. aeruginosa multi-resistente"], "IRASH075": ["microbiologia", "Densidad de incidencia de pacientes ingresados con A. baumannii multi-resistente"], "IRASH076": ["microbiologia", "Densidad de incidencia de pacientes hospitalarios con C. difficile"], "PROAH001": ["adecuacion", "Tasa global de tratamientos antimicrobianos inadecuados"], "PROAH002": ["adecuacion", "Tasa de tratamientos antimicrobianos inadecuados en tratamiento empírico"], "PROAH003": ["adecuacion", "Tasa de tratamientos antimicrobianos inadecuados en tratamiento dirigido"], "PROAH004": ["mortalidad", "Mortalidad cruda bacteriemia por E. coli"], "PROAH005": ["mortalidad", "Mortalidad cruda bacteriemia por P. aeruginosa"], "PROAH006": ["mortalidad", "Mortalidad cruda bacteriemia por K. pneumoniae"], "PROAH007": ["mortalidad", "Mortalidad cruda bacteriemia por A. baumannii"], "PROAH008": ["mortalidad", "Mortalidad cruda bacteriemia por S. aureus"], "PROAH009": ["mortalidad", "Mortalidad cruda bacteriemia por N. meningitidis"], "PROAH010": ["mortalidad", "Mortalidad cruda bacteriemia por S. pneumoniae"], "PROAH011": ["mortalidad", "Mortalidad cruda bacteriemia por Candida spp."], "PROAH012": ["consumo", "DDD de amoxicilina por 1000 estancias"], "PROAH013": ["consumo", "DDD de ampicilina por 1000 estancias"], "PROAH014": ["consumo", "DDD de amoxicilina/ácido clavulánico por 1000 estancias"], "PROAH015": ["consumo", "DDD de piperacilina/tazobactam por 1000 estancias"], "PROAH016": ["consumo", "DDD de cefadroxilo por 1000 estancias"], "PROAH017": ["consumo", "DDD de cefazolina por 1000 estancias"], "PROAH018": ["consumo", "DDD de cefuroxima por 1000 estancias"], "PROAH019": ["consumo", "DDD de ceftriaxona por 1000 estancias"], "PROAH020": ["consumo", "DDD de cefotaxima por 1000 estancias"], "PROAH021": ["consumo", "DDD de cefixima por 1000 estancias"], "PROAH022": ["consumo", "DDD de ceftazidima por 1000 estancias"], "PROAH023": ["consumo", "DDD de ceftazidima-avibactam por 1000 estancias"], "PROAH024": ["consumo", "DDD de cefepima por 1000 estancias"], "PROAH025": ["consumo", "DDD de ceftarolina por 1000 estancias"], "PROAH026": ["consumo", "DDD de ceftobiprole por 1000 estancias"], "PROAH027": ["consumo", "DDD de ceftolozane-tazobactam por 1000 estancias"], "PROAH028": ["consumo", "DDD de cefiderocol por 1000 estancias"], "PROAH029": ["consumo", "DDD de ertapenem por 1000 estancias"], "PROAH030": ["consumo", "DDD de imipenem por 1000 estancias"], "PROAH031": ["consumo", "DDD de imipenem-relebactam por 1000 estancias"], "PROAH032": ["consumo", "DDD de meropenem por 1000 estancias"], "PROAH033": ["consumo", "DDD de meropenem-vaborbactam por 1000 estancias"], "PROAH040": ["consumo", "DDD de cloxacilina por 1000 estancias"], "PROAH034": ["consumo", "DDD de ciprofloxacino por 1000 estancias"], "PROAH035": ["consumo", "DDD de levofloxacino por 1000 estancias"], "PROAH036": ["consumo", "DDD de moxifloxacino por 1000 estancias"], "PROAH037": ["consumo", "DDD de delafloxacino por 1000 estancias"], "PROAH038": ["consumo", "DDD de tigeciclina por 1000 estancias"], "PROAH039": ["consumo", "DDD de colistina por 1000 estancias"], "PROAH041": ["consumo", "DDD de vancomicina por 1000 estancias"], "PROAH042": ["consumo", "DDD de dalbavancina por 1000 estancias"], "PROAH043": ["consumo", "DDD de teicoplanina por 1000 estancias"], "PROAH044": ["consumo", "DDD de oritavancina por 1000 estancias"], "PROAH045": ["consumo", "DDD de daptomicina por 1000 estancias"], "PROAH046": ["consumo", "DDD de linezolid por 1000 estancias"], "PROAH047": ["consumo", "DDD de tedizolid por 1000 estancias"], "PROAH048": ["consumo", "DDD de cotrimoxazol por 1000 estancias"], "PROAH049": ["consumo", "DDD de clindamicina por 1000 estancias"], "PROAH050": ["consumo", "DDD de metronidazol por 1000 estancias"], "PROAH051": ["consumo", "DDD de fidaxomicina por 1000 estancias"], "PROAH052": ["consumo", "DDD de eritromicina por 1000 estancias"], "PROAH053": ["consumo", "DDD de claritromicina por 1000 estancias"], "PROAH054": ["consumo", "DDD de azitromicina por 1000 estancias"], "PROAH055": ["consumo", "DDD de gentamicina por 1000 estancias"], "PROAH056": ["consumo", "DDD de tobramicina por 1000 estancias"], "PROAH057": ["consumo", "DDD de amikacina por 1000 estancias"], "PROAH058": ["consumo", "DDD de fluconazol por 1000 estancias"], "PROAH059": ["consumo", "DDD de voriconazol por 1000 estancias"], "PROAH060": ["consumo", "DDD de isavuconazol por 1000 estancias"], "PROAH061": ["consumo", "DDD de posaconazol por 1000 estancias"], "PROAH062": ["consumo", "DDD de itraconazol por 1000 estancias"], "PROAH063": ["consumo", "DDD de anfotericina liposomal por 1000 estancias"], "PROAH064": ["consumo", "DDD de anfotericina complejo lipidico por 1000 estancias"], "PROAH065": ["consumo", "DDD de anfotericina deoxicolato por 1000 estancias"], "PROAH066": ["consumo", "DDD de caspofungina por 1000 estancias"], "PROAH067": ["consumo", "DDD de micafungina por 1000 estancias"], "PROAH068": ["consumo", "DDD de anidulafungina por 1000 estancias"], "PROAH069": ["gasto", "Gasto en antibióticos y antifúngicos en pacientes ingresados"], "PROAH070": ["gasto", "Gasto en antibióticos y antifúngicos en pacientes ambulatorios"], "PROAH071": ["gasto", "Gasto total en antibióticos y antifúngicos"], "PROAH072": ["consumo", "DDD Total de antimicrobianos grupo J01 y antifúngicos grupo J02 por 1000 estancias"]};
+const filters = [['Indicador',1],['Ámbito o GFH',2],['Grupo',3],['Elemento',4],['Desde',0],['Hasta',0],['Periodicidad',0]];
 const unit = 'DDD/1.000 estancias';
+const communityUnit = 'DDD/1.000 habitantes y día';
+const percentMetrics = new Set(['higiene','adecuacion','mortalidad']);
+const labelFor = item => catalog[item] ? item+' · '+catalog[item][1] : item;
 const samples = [
+ ['2025-T1','higiene','Hospital','Higiene de manos','IRASH065','%',86],
+ ['2025-T2','higiene','Hospital','Higiene de manos','IRASH065','%',93],
+ ['2025-T1','adecuacion','Hospital','Global','PROAH001','%',23],
+ ['2025-T2','adecuacion','Hospital','Global','PROAH001','%',15],
+ ['2025-T1','mortalidad','Hospital','Bacteriemia','PROAH004','%',12],
+ ['2025-T2','mortalidad','Hospital','Bacteriemia','PROAH004','%',9],
  ['2025-T1','consumo','Hospital','Carbapenémicos','Meropenem',unit,22],
  ['2025-T2','consumo','Hospital','Carbapenémicos','Meropenem',unit,18],
  ['2025-T1','gasto','Ingresados','Total','Antimicrobianos','EUR',1234],
@@ -91,7 +114,9 @@ function normalize(source, header = true) {
   const [period, metric, scope, group, item, units, value] = row;
   if (row.length !== 7 || row.some(cell => cell.length > 160) || !/^20\d\d(?:-T[1-4])?$/.test(period)
       || !Object.hasOwn(metrics,metric) || !scope || !group || !item || !units
-      || (metric === 'consumo' && units !== unit) || (metric === 'gasto' && units !== 'EUR')
+      || (metric === 'consumo' && ![unit,communityUnit].includes(units)) || (metric === 'gasto' && units !== 'EUR')
+      || (percentMetrics.has(metric) && (units !== '%' || Number(value.replace(',','.'))>100))
+      || (catalog[item] && catalog[item][0] !== metric)
       || !/^\d+(?:[.,]\d+)?(?:e[+-]?\d+)?$/i.test(value) || !Number.isFinite(Number(value.replace(',','.')))
       || [scope,group,item,units].some(text => /^[=+@-]/.test(text)))
    throw Error('Revisa los campos y la unidad de la fila ' + (index + (header ? 2 : 1)) + '.');
@@ -119,7 +144,7 @@ function table(records) {
  const body=table.createTBody();
  for(const row of records) {
   const line=body.insertRow();
-  row.forEach((value,i)=>line.insertCell().textContent=i===1?metrics[value]:i===6?format.format(value):value);
+  row.forEach((value,i)=>line.insertCell().textContent=i===1?metrics[value]:i===6?format.format(value):i===4?labelFor(value):value);
  }
  const wrap=element('div'); wrap.className='scroll'; wrap.append(table); return wrap;
 }
@@ -135,8 +160,8 @@ function datesAndFilters(reset) {
   const parent=element('label',label+' '), list=element('select');
   const before=reset?'':$('filter'+i)?.value ?? '';
   list.id='filter'+i; list.add(new Option(i===4?'Inicio':i===5?'Final':'Todos',''));
-  for (const value of [...new Set(rows.map(row=>row[col]))].sort((a,b)=>a.localeCompare(b,'es')))
-   list.add(new Option(col===1?metrics[value]:value,value));
+  const options=i===0?Object.keys(metrics):i===6?['Anual','Trimestral']:[...new Set(rows.map(row=>row[col]))].sort((a,b)=>a.localeCompare(b,'es'));
+  for (const value of options) list.add(new Option(i===3?labelFor(value):col===1?metrics[value]:value,value));
   if ([...list.options].some(option=>option.value===before)) list.value=before;
   list.onchange=()=>render(false); parent.append(list); return parent;
  });
@@ -144,14 +169,15 @@ function datesAndFilters(reset) {
 function selection() {
  const picked=filters.map((_,i)=>$('filter'+i).value);
  return rows.filter(row=>filters.every(([,col],i)=>!picked[i] ||
-  (i===4?row[col]>=picked[i]:i===5?row[col]<=picked[i]:row[col]===picked[i])));
+  (i===4?row[col]>=picked[i]:i===5?row[col]<=picked[i]:i===6?(row[0].length===4?'Anual':'Trimestral')===picked[i]:row[col]===picked[i])));
 }
 function render(refresh) {
  if(refresh) $('filters').replaceChildren(...datesAndFilters(true));
  const result=selection(), page=$('report'); page.replaceChildren();
+ for(const button of $('modules').children) button.setAttribute('aria-pressed',String(button.dataset.metric===$('filter0').value));
  const summary=element('section');
  const activeFilters=filters.map(([label],i)=>{const control=$('filter'+i);return control.value?label+' '+control.selectedOptions[0].text:'';}).filter(Boolean);
- summary.append(element('h2',activeFilters.length?'Informe personalizado PROA Valme':'Informe general PROA Valme'),
+ summary.append(element('h2',$('reportTitle').value.trim() || (activeFilters.length?'Informe personalizado PROA Valme':'Informe general PROA Valme')),
   element('p',activeFilters.join(' · ')),
   element('p',result.length+' registros · '+new Set(result.map(row=>row[0])).size+' periodos'+(fictional?' · Contiene datos ficticios':'')));
  page.append(summary);
@@ -162,10 +188,13 @@ function render(refresh) {
   if(!groups.has(key)) groups.set(key,[]);
   groups.get(key).push(row);
  }
- for(const series of [...groups.values()].filter(group=>group.length>1).slice(0,8)) {
+ const limit=$('chartLimit').value;
+ const available=[...groups.values()].filter(group=>group.length>1);
+ if(limit!=='all' && Number(limit)>0 && available.length>Number(limit)) summary.append(element('p','Se muestran '+limit+' de '+available.length+' series. Puedes ampliar la selección en Gráficos.'));
+ for(const series of available.slice(0,limit==='all'?available.length:Number(limit))) {
   const block=element('section'), ordered=[...series].sort((a,b)=>a[0].localeCompare(b[0]));
   const [,metric,scope,group,item,units]=ordered[0];
-  block.append(element('h2',item),element('p',[metrics[metric],scope,group,units].join(' · ')));
+  block.append(element('h2',labelFor(item)),element('p',[metrics[metric],scope,group,units].join(' · ')));
   const maximum=Math.max(1,...ordered.map(row=>row[6]));
   for(const row of ordered) {
    const line=element('div'); line.className='bar';
@@ -177,6 +206,7 @@ function render(refresh) {
     (first?' ('+format.format((last-first)/first*100)+' %)':' · Variación porcentual sin referencia distinta de cero')));
   page.append(block);
  }
+ if(!$('showDetail').checked)return;
  const details=element('section'); details.append(element('h2','Detalle'),
   result.length?table([...result].sort((a,b)=>a[0].localeCompare(b[0]))):element('p','No hay registros para esta selección.'));
  page.append(details);
@@ -334,9 +364,37 @@ $('clear').onclick=()=>{
 };
 $('template').onclick=()=>download('plantilla-proavalme.csv','\ufeff'+csv([]),'text/csv;charset=utf-8');
 $('general').onclick=()=>{render(true); $('report').scrollIntoView();};
+function renderCatalog() {
+ const query=$('catalogSearch').value.trim().toLocaleLowerCase('es');
+ const scope=$('catalogScope').value;
+ const entries=Object.entries(catalog).filter(([code,[metric,label]])=>(!scope ||
+   (scope==='district')===code.startsWith('PROAD')) && [code,metrics[metric],label].join(' ').toLocaleLowerCase('es').includes(query));
+ const list=element('ul');
+ for(const [code,[metric,label]] of entries) list.append(element('li',code+' · '+metrics[metric]+' · '+label));
+ $('catalogRows').replaceChildren(element('p',entries.length+' indicadores'),list);
+}
+for(const [metric,title] of [['','Vista general'],...Object.entries(metrics)]) {
+ const button=element('button',title); button.dataset.metric=metric;
+ button.onclick=()=>{
+  for(let i=0;i<4;i++) $('filter'+i).value='';
+  $('filter0').value=metric; render(false); $('report').scrollIntoView();
+ };
+ $('modules').append(button);
+}
+$('catalogSearch').oninput=renderCatalog;
+$('catalogScope').onchange=renderCatalog;
+$('catalogExport').onclick=()=>{
+ const quote=value=>'"'+value.replaceAll('"','""')+'"';
+ const lines=Object.entries(catalog).map(([code,[metric,label]])=>[code,metric,label].map(quote).join(';'));
+ download('catalogo-pirasoa-2025.csv','\ufeffcodigo;indicador;descripcion\r\n'+lines.join('\r\n'),'text/csv;charset=utf-8');
+};
+$('chartLimit').onchange=()=>render(false);
+$('showDetail').onchange=()=>render(false);
+$('reportTitle').oninput=()=>render(false);
 $('print').onclick=()=>window.print();
 $('export').onclick=()=>download('informe-proavalme.csv','\ufeff'+csv(selection()),'text/csv;charset=utf-8');
 addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
+renderCatalog();
 render(true);
 </script>
 </body>
